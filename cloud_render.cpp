@@ -6,7 +6,7 @@
 #include <random>
 #include <chrono>
 
-// ============ Vector3 类 ============
+// ============ Vector3 Class ============
 struct Vec3 {
     float x, y, z;
     
@@ -26,7 +26,7 @@ struct Vec3 {
     float dot(const Vec3& v) const { return x * v.x + y * v.y + v.z * v.z; }
 };
 
-// ============ 工具函数 ============
+// ============ Utility Functions ============
 float fract(float x) { return x - std::floor(x); }
 
 Vec3 fract(const Vec3& v) {
@@ -42,7 +42,7 @@ float mix(float a, float b, float t) {
     return a * (1 - t) + b * t;
 }
 
-// ============ 噪声函数 ============
+// ============ Noise Functions ============
 Vec3 hash3(const Vec3& p) {
     float x = std::sin(p.x * 443.897f + p.y * 441.423f + p.z * 437.195f) * 43758.5453f;
     float y = std::sin(p.x * 419.123f + p.y * 431.654f + p.z * 421.321f) * 43758.5453f;
@@ -50,7 +50,7 @@ Vec3 hash3(const Vec3& p) {
     return Vec3(fract(x), fract(y), fract(z));
 }
 
-// Perlin 噪声
+// Perlin Noise
 float noise3D(const Vec3& p) {
     Vec3 i(std::floor(p.x), std::floor(p.y), std::floor(p.z));
     Vec3 f(p.x - i.x, p.y - i.y, p.z - i.z);
@@ -72,7 +72,7 @@ float noise3D(const Vec3& p) {
     return result * 0.5f + 0.5f; 
 }
 
-// 分形布朗运动 (FBM)
+// Fractal Brownian Motion (FBM)
 float fbm(const Vec3& p, int octaves) {
     float total = 0.0f;
     float amplitude = 0.5f; 
@@ -88,7 +88,7 @@ float fbm(const Vec3& p, int octaves) {
     return total;
 }
 
-// Worley 噪声
+// Worley Noise
 float worley3D(const Vec3& p) {
     Vec3 id(std::floor(p.x), std::floor(p.y), std::floor(p.z));
     Vec3 fd(p.x - id.x, p.y - id.y, p.z - id.z);
@@ -110,74 +110,66 @@ float worley3D(const Vec3& p) {
     return minDistSq;
 }
 
-// ============ 单个云团的密度 (Worley 塑形，圆润棉花糖) ============
+// ============ Single Cloud Density ============
 float singleCloudDensity(Vec3 p, Vec3 center, float size) {
-    // 1. 距离衰减 (整体轮廓的球形基础)
+    // Distance Falloff (Spherical base for overall shape)
     Vec3 offset = p - center;
     float dist = offset.length();
     float falloff = smoothstep(size * 1.5f, size * 0.4f, dist); 
     
     if (falloff < 0.001f) return 0.0f;
     
-    // 形状修正：幂次操作，使其形状更像一个球体（更圆）
+    // Power operation to make the shape more spherical (rounder)
     falloff = std::pow(falloff, 1.2f); 
 
-    // 2. 形状基础 (极低频，用于定义整体气泡感)
+    // Base Shape
     float baseFreq = 2.0f / size; 
     
-    // 核心塑形 1: 使用 Worley 噪声 (距离) 定义圆润的基础形状
+    // Use Worley noise (distance) to define the rounded base shape
     float worleyShape = worley3D(p * (baseFreq * 0.3f)); 
     
-    // 将距离转换为密度，越近 (值越小) 密度越高，幂次产生圆润边界
+    // Convert distance to density. Closer (smaller value) means higher density
+    // Power function creates soft boundaries.
     float baseDensity = 1.0f - std::pow(worleyShape, 4.0f); 
     
-    // 3. 细节扰动 (高频，用于细节和稀疏度)
-    // FBM 细节噪声 (中高频)
+    // FBM Detail Noise (Mid-to-high frequency)
     float perlinFBM = fbm(p * baseFreq * 1.8f, 5); 
     
-    // 4. 最终组合
-    // 核心塑形 2: 将 Worley 基础形状 与 FBM 细节组合
+    // Combine Worley base shape with FBM details
     float totalDensityBase = baseDensity * perlinFBM; 
-
-    // 5. 整体密度和软阈值
-    totalDensityBase = std::min(totalDensityBase, 1.0f); 
-    
-    // 恢复密度增幅
+    totalDensityBase = std::min(totalDensityBase, 1.0f);    
+    // density multiplier
     totalDensityBase *= 3.5f; 
-    
-    // 乘上安全边界
+    // boundary falloff
     totalDensityBase *= falloff; 
     
-    // 6. 最终平滑和密度定义
-    // 使用宽平滑确保棉花糖的柔和边缘
+    // Use wide smoothstep to ensure soft, marshmallow-like edges
     float density = smoothstep(0.5f, 1.5f, totalDensityBase); 
     
     return density;
 }
 
-#include <random> // 确保您已包含此头文件
-
-// ============ 云团定义 ============
+// ============ Cloud Cluster Definition ============
 struct CloudCluster {
     Vec3 center;
     float size;
     Vec3 velocity;
 };
 
-// 随机数生成器设置 (确保只初始化一次)
+// Random number generator setup
 std::default_random_engine generator(std::chrono::system_clock::now().time_since_epoch().count());
 
-// 创建多个云团 (随机生成位置，数量 18 个)
+// Create multiple cloud clusters (18 randomized positions)
 std::vector<CloudCluster> createCloudClusters() {
     std::vector<CloudCluster> clusters;
     const int numClusters = 18;
 
-    // 随机分布范围
-    std::uniform_real_distribution<float> distX(-5.0f, 5.0f);   // X 轴 (水平)
-    std::uniform_real_distribution<float> distY(0.3f, 1.2f);    // Y 轴 (垂直高度)
-    std::uniform_real_distribution<float> distZ(1.0f, 15.0f);   // Z 轴 (深度)
+    // Random distribution range
+    std::uniform_real_distribution<float> distX(-5.0f, 5.0f);   // X-axis (horizontal)
+    std::uniform_real_distribution<float> distY(0.3f, 1.2f);    // Y-axis (vertical height)
+    std::uniform_real_distribution<float> distZ(1.0f, 15.0f);   // Z-axis (depth)
     
-    // 随机大小和速度范围
+    // Random size and speed ranges
     std::uniform_real_distribution<float> distSize(0.8f, 1.5f);
     std::uniform_real_distribution<float> distSpeed(0.01f, 0.045f);
 
@@ -189,7 +181,7 @@ std::vector<CloudCluster> createCloudClusters() {
         float size = distSize(generator);
         float speed = distSpeed(generator);
         
-        // 确保速度始终向右 (正 X 方向)
+        // Make sure velocity is always to the right (positive X direction)
         Vec3 velocity = {speed, 0.0f, 0.0f};
 
         clusters.push_back({
@@ -202,17 +194,17 @@ std::vector<CloudCluster> createCloudClusters() {
     return clusters;
 }
 
-// ============ 组合所有云团的密度 (几何 Y 轴反转，解决头重脚轻和融合) ============
+// ============ Combined Cloud Density ============
 float getCloudDensity(Vec3 p, float time) {
     static std::vector<CloudCluster> clusters = createCloudClusters();
     
     float totalDensity = 0.0f;
 
-    // 核心修正：几何 Y 轴反转 (使底部饱满，顶部稀疏)
-    // 反转点 Y_center = 1.6f / 2 = 0.8f
+    // Y-axis flip to make the base round and the top sparse
+    // Flip point Y_center = 1.6f / 2 = 0.8f
     p.y = 1.6f - p.y; 
     
-    // 安全边界
+    // Safety boundary
     if (p.y < 0.0f || p.y > 2.5f) {
         return 0.0f;
     }
@@ -224,31 +216,30 @@ float getCloudDensity(Vec3 p, float time) {
             animatedCenter.x = std::fmod(animatedCenter.x + 4.0f, 8.0f) - 4.0f;
         }
         
-        // 注意：这里我们将 p.y 的原始中心点也反转
         Vec3 p_flipped_center = p;
         p_flipped_center.y = 1.6f - p_flipped_center.y;
         
         float density = singleCloudDensity(p_flipped_center, animatedCenter, cluster.size);
         
-        // 降低密度贡献系数 (0.6f)，防止云团过度融合
+        // Reduce density contribution (0.6f) to prevent over combining
         totalDensity += density * 0.6f; 
     }
     
     totalDensity = std::min(totalDensity, 1.0f);
     
-    // 底部安全衰减
+    // Bottom safety falloff
     float floorFade = smoothstep(0.0f, 0.2f, p.y);
     totalDensity *= floorFade;
     
     return totalDensity;
 }
 
-// Beer 定律 (用于光照衰减)
+// Beer's Law
 float beerLaw(float density, float distance) {
     return std::exp(-density * distance * 3.0f);
 }
 
-// ============ 光照计算 (Light Marching) - 阴影平滑度提升 ============
+// ============ Light Marching ============
 float lightMarch(Vec3 pos, const Vec3& lightDir, float time) {
     float totalDensity = 0.0f;
     const float marchSize = 0.03f; 
@@ -265,7 +256,7 @@ float lightMarch(Vec3 pos, const Vec3& lightDir, float time) {
     return beerLaw(totalDensity, 1.0f);
 }
 
-// ============ Raymarch 主函数 (高平滑度/低密度) ============
+// ============ Raymarch Main Function ============
 struct RaymarchResult {
     Vec3 color;
     float alpha;
@@ -282,7 +273,7 @@ RaymarchResult raymarchClouds(const Vec3& ro, const Vec3& rd, float time) {
     Vec3 lightDir = Vec3(0.7f, 0.5f, -0.2f).normalize();
     Vec3 lightColor(1.0f, 0.98f, 0.9f);
     
-    // 核心参数：高平滑度，低散射
+    // High smoothness, low scattering
     const int maxSteps = 250; 
     const float stepSize = 0.01f; 
     const float scatterCoeff = 12.0f; 
@@ -290,7 +281,7 @@ RaymarchResult raymarchClouds(const Vec3& ro, const Vec3& rd, float time) {
     for (int i = 0; i < maxSteps; i++) {
         Vec3 pos = ro + rd * t;
         
-        // 最大 Raymarch 距离 T=15.0f 适应 Z=15.0f 的远云
+        // Max Raymarch distance T=15.0f for distant clouds at Z=15.0f
         if (t > 15.0f || alpha > 0.98f) {
             break;
         }
@@ -328,7 +319,7 @@ RaymarchResult raymarchClouds(const Vec3& ro, const Vec3& rd, float time) {
     return {col, alpha, samplesHit};
 }
 
-// ============ 渲染函数 (扩大视野) ============
+// ============ Render Function ============
 void render(int width, int height, float time, std::vector<unsigned char>& pixels) {
     int cloudPixelCount = 0; 
     
@@ -339,7 +330,7 @@ void render(int width, int height, float time, std::vector<unsigned char>& pixel
             
             Vec3 ro(0, 0.4f, -2.5f); 
             
-            // 扩大视野 (FOV)
+            // Expanded Field of View (FOV)
             Vec3 rd = Vec3(px, py + 0.2f, 0.7f).normalize(); 
             
             Vec3 finalColor;
@@ -375,38 +366,36 @@ void render(int width, int height, float time, std::vector<unsigned char>& pixel
         }
         
         if (y % 10 == 0) {
-            std::cout << "渲染进度: " << (y * 100 / height) << "%\r" << std::flush;
+            std::cout << "Render Progress: " << (y * 100 / height) << "%\r" << std::flush;
         }
     }
-    std::cout << "渲染进度: 100%   " << std::endl;
-    std::cout << "云像素数: " << cloudPixelCount << " / " << (width * height / 2) 
-              << " (" << (cloudPixelCount * 100.0f / (width * height / 2)) << "%)" << std::endl;
+    std::cout << "Render Progress: 100%   " << std::endl;
 }
 
-// ============ PPM 文件输出 ============
+// ============ PPM File Output ============
 void savePPM(const std::string& filename, int width, int height, const std::vector<unsigned char>& pixels) {
     std::ofstream file(filename, std::ios::binary);
     file << "P6\n" << width << " " << height << "\n255\n";
     file.write(reinterpret_cast<const char*>(pixels.data()), pixels.size());
     file.close();
-    std::cout << "图像已保存到: " << filename << std::endl;
+    std::cout << "Image saved to: " << filename << std::endl;
 }
 
-// ============ 主函数 (渲染多帧) ============
+// ============ Main Function (Render Multiple Frames) ============
 int main() {
     const int width = 800;
     const int height = 600;
     const int numFrames = 1; 
     
-    std::cout << "开始渲染体积云动画..." << std::endl;
-    std::cout << "分辨率: " << width << "x" << height << std::endl;
-    std::cout << "帧数: " << numFrames << std::endl;
+    std::cout << "Starting volume cloud animation rendering..." << std::endl;
+    std::cout << "Resolution: " << width << "x" << height << std::endl;
+    std::cout << "Number of frames: " << numFrames << std::endl;
     
     for (int frame = 0; frame < numFrames; frame++) {
         std::vector<unsigned char> pixels(width * height * 3);
         float time = frame * 0.15f; 
         
-        std::cout << "\n正在渲染第 " << (frame + 1) << "/" << numFrames << " 帧..." << std::endl;
+        std::cout << "\nRendering Frame " << (frame + 1) << "/" << numFrames << "..." << std::endl;
         render(width, height, time, pixels);
         
         char filename[256];
@@ -414,12 +403,7 @@ int main() {
         savePPM(filename, width, height, pixels);
     }
     
-    std::cout << "\n所有帧渲染完成！" << std::endl;
-    std::cout << "-------------------------------------" << std::endl;
-    std::cout << "请运行以下命令将PPM文件转换为GIF或MP4：" << std::endl;
-    std::cout << "ImageMagick (GIF): convert -delay 5 -loop 0 cloud_frame_*.ppm clouds.gif" << std::endl;
-    std::cout << "FFmpeg (MP4): ffmpeg -i cloud_frame_%04d.ppm -vf \"fps=20,format=yuv420p\" clouds.mp4" << std::endl;
-    std::cout << "-------------------------------------" << std::endl;
+    std::cout << "\nAll frames rendered!" << std::endl;
     
     return 0;
 }
