@@ -1144,7 +1144,7 @@ int main()
     std::cout << "  Rendering Complete!" << std::endl;
     std::cout << "=====================================" << std::endl;
     std::cout << "To create video:" << std::endl;
-    std::cout << "ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -c:v libx264 -pix_fmt yuv420p -crf 18 ocean.mp4" << std::endl;
+    std::cout << "ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -c:v libx264 -pix_fmt yuv420p -crf 18 ocean_animation.mp4" << std::endl;
 
     return 0;
 }

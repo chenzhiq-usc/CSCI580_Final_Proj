@@ -116,7 +116,10 @@ g++ -std=c++17 -O2 toon_wave_shader.cpp -o toon_wave_shader
 ./toon_wave_shader
 
 # Make the video (brew install ffmpeg)
-ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -c:v libx264 output/ocean_animation.mp4
+ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -c:v libx264 -pix_fmt yuv420p -crf 18 ocean_animation.mp4
+
+# Make the gif
+ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -vf "fps=30,scale=800:-1:flags=lanczos" ocean_animation.gif
 ```
 
 ## Credits & References
