@@ -99,7 +99,7 @@ This is a real-time stylized ocean scene combining cel-shaded/toon rendering wit
 
 ### Running on Shadertoy
 
-1. Copy `toon_ocean_final.glsl` to [Shadertoy.com](https://www.shadertoy.com/)
+1. Copy `toon_wave_shader.glsl` to [Shadertoy.com](https://www.shadertoy.com/)
 2. Click play to see real-time animation
 3. Adjust parameters in the shader code for customization
 
@@ -109,7 +109,7 @@ This is a real-time stylized ocean scene combining cel-shaded/toon rendering wit
 # Create output directory
 mkdir -p output
 
-# Compile with C++11 support
+# Compile
 g++ -std=c++17 -O2 toon_wave_shader.cpp -o toon_wave_shader
 
 # Run the program
