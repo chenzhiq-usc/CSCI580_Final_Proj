@@ -109,7 +109,7 @@ This is a real-time stylized ocean scene combining cel-shaded/toon rendering wit
 # Create output directory
 mkdir -p output
 
-# Compile with C++11 support
+# Compile
 g++ -std=c++17 -O2 toon_wave_shader.cpp -o toon_wave_shader
 
 # Run the program
