@@ -5,3 +5,4 @@ toon_wave_shader
 *.o
 *.out
 .DS_Store
+.vscode/
