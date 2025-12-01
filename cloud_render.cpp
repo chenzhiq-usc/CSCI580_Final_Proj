@@ -175,7 +175,7 @@ std::vector<CloudCluster> createCloudClusters() {
 
     for (int i = 0; i < numClusters; ++i) {
         float cx = distX(generator);
-        float cy = distY(generator);
+        float cy = distY(generator);         
         float cz = distZ(generator);
         
         float size = distSize(generator);
