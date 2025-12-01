@@ -40,11 +40,11 @@ This is a stylized ocean scene combining cel-shaded/toon rendering with animated
 ### Basic Compilation
 ```bash
 # Compile with C++11 support
-g++ -std=c++11 ocean_scene_fixed.cpp -o ocean_scene_fixed -O3 -march=native
+g++ -std=c++17 -O2 toon_wave_shader.cpp -o toon_wave_shader
 
 # Run the program
-./ocean_scene_fixed
+./toon_wave_shader
 
 # Make the video (brew install ffmpeg)
-ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -c:v libx264 output/ocean.mp4
+ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -c:v libx264 output/ocean_animation.mp4
 ```

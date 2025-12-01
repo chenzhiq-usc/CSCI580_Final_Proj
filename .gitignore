@@ -1,4 +1,7 @@
 output/*.ppm
 output/*.png
 output/*.mp4
+toon_wave_shader
+*.o
+*.out
 .DS_Store
