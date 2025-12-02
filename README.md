@@ -21,79 +21,22 @@ This is a real-time stylized ocean scene combining cel-shaded/toon rendering wit
 
 ## Features Implemented
 
-### Wave System
-
-- **Gerstner Wave Equations**: Physically-based wave simulation with:
-  - Multiple overlapping waves at different frequencies
-  - Amplitude and wavelength control
-  - Phase shifts for natural variation
-  - Drag multiplier for realistic wave interaction
-- **Dynamic Foam System**:
-  - Shore foam near shallow areas
-  - Wave crest foam on steep slopes
-  - Sea spray particles on wave peaks
-- **Normal Calculation**: Computed from wave height field for accurate lighting
-
-### Water Rendering
-
-- **Multi-depth Color Gradients**:
-  - Shallow (turquoise) → Mid (blue) → Deep (dark blue) transitions
-  - Smoothstep blending between depth zones
-- **Worley Noise Patterns**:
-  - Caustic effects in shallow water
-  - Large-scale patterns for deep water variation
-  - Animated for dynamic underwater appearance
-- **Toon Lighting**: 4-band diffuse + 2-band specular cel-shading
-- **Fresnel Effects**: Angle-dependent reflections quantized for toon style
-- **Horizon Blending**: Smooth transition to distant ocean color
-
 ### Cloud System
 
-- **2D Procedural Clouds**: Layered noise-based approach
-  - Ridged noise for cloud structure
-  - Smooth noise for soft edges
-  - Multiple octaves for detail variation
-- **Cel-Shaded Lighting**: 3-band quantization (bright/mid/shadow)
-- **Sky Gradient**: Two-tone blue gradient from horizon to zenith
-- **Animation**: Clouds drift using matrix-based noise advection
-- **Adjustable Parameters**: Coverage, darkness, alpha, and speed controls
+We generate clouds procedurally using layered noise - combining ridged patterns for structure and smooth patterns for softness. The lighting is cel-shaded with discrete brightness bands to match our toon aesthetic. Clouds move over time using noise transformation, and blend naturally with the gradient sky background.
+
+### Wave System
+
+Our ocean uses Gerstner wave equations, which build complex motion by layering waves from different directions with varying frequencies. A drag coefficient creates the choppy, realistic peaks. We reduce wave detail at distance to maintain performance - near waves are full complexity, far waves are simplified. Surface normals come from the wave height field for lighting, and foam appears 
+on steep crests and shallow areas.
 
 ### Boat Model
 
-- **SDF-Based Geometry**: Signed Distance Field modeling
-  - Hull with rounded bow and stern
-  - Cabin with windows and roof
-  - Mast with crow's nest
-  - Smokestack
-- **Wind-Animated Flag**:
-  - Multiple sine wave frequencies
-  - Exponential amplitude increase from pole to edge
-  - Vertical and horizontal flutter motion
-- **Material System**: 4 materials (hull, cabin, mast, flag) with distinct colors
-- **Shadow Casting**: Soft shadows on water surface
-- **Water Reflection**: Ray-marched reflection with distortion
+We build the boat using Signed Distance Functions - the hull, cabin, mast, and flag are all defined mathematically and rendered through ray marching. Each part has its own material color. The flag animates with sine waves that get stronger toward the free end, giving it a realistic flutter. The boat follows the wave motion beneath it and adds a gentle drift for natural movement.
 
-### Toon/Cel Shading
+### Boat Reflection
 
-- **Discrete Color Bands**: Quantized lighting in 3-4 levels
-- **Rim Lighting**: Edge emphasis with step function
-- **Stylized Specular**: Toon-shaded highlights
-- **Band Thresholds**: Adjustable for different cel-shading intensities
-
-## Technical Implementation
-
-### Rendering Pipeline
-
-1. **Sky & Clouds**: 2D screen-space procedural rendering
-2. **Water Surface**: Ray-march Gerstner wave height field
-3. **Boat**: SDF ray-marching with material ID system
-4. **Compositing**: Depth-based layer ordering
-
-### Shader Architecture
-
-- **GLSL Fragment Shader** for Shadertoy/WebGL
-- **Procedural Generation**: No texture dependencies
-- **Real-time Performance**: Optimized ray-marching and noise functions
+To create reflections, we flip the boat vertically below the water surface and ray march toward it using the reflected view direction. The reflection ray accounts for the water surface normal. We add noise-based distortion to make it look wavy and natural, then blend the reflection with the water color.
 
 ## Compilation & Running
 
@@ -126,19 +69,17 @@ ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -vf "fps=30,scale=800:-1:fla
 
 ### Wave & Water Rendering
 
-- **Gerstner Waves**: GPU Gems chapter on water simulation
+- **Gerstner Waves**:
   - Physically-based wave equations for realistic ocean motion
-  - [GPU Gems - Chapter 1: Effective Water Simulation](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models)
-- **Fresnel Effect**: Schlick's approximation for view-angle dependent reflections
+- **Fresnel Effect**: 
   - Used for water surface reflectivity based on viewing angle
-  - [Schlick's Approximation](https://en.wikipedia.org/wiki/Schlick%27s_approximation)
 
 ### Procedural Noise & Clouds
 
 - **Cloud Noise**: Shadertoy cloud rendering techniques
   - 2D simplex noise implementation
   - Fractional Brownian Motion (fBm) for cloud detail
-  - Inspired by ["Clouds" by iq on Shadertoy](https://www.shadertoy.com/view/XslGRr)
+  - Inspired by ["2D Clouds" by drift on Shadertoy](https://www.shadertoy.com/view/4tdSWr)
 - **Worley Noise**: Cellular noise for caustics and water patterns
   - [Worley Noise (Cellular Noise)](https://en.wikipedia.org/wiki/Worley_noise)
   - Used for underwater caustic light patterns
@@ -156,11 +97,10 @@ ffmpeg -framerate 30 -i output/ocean_frame_%04d.ppm -vf "fps=30,scale=800:-1:fla
 - **NPR (Non-Photorealistic Rendering)**: Discrete lighting bands
   - Quantization of diffuse and specular lighting
   - Step functions for hard shadow transitions
-  - Inspired by games like _The Legend of Zelda: Wind Waker_ and _Genshin Impact_
 - **Rim Lighting**: Edge detection for toon outlines
   - View-dependent edge highlighting
 
-### Mathematical Functions
+### Other Functions
 
 - **Perlin Noise**: Quintic interpolation for smooth value noise
   - Used for wave detail and foam patterns
