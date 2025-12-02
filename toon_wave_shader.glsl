@@ -1,3 +1,9 @@
+// ============================================================================
+// ENHANCED TOON-SHADER OCEAN WITH GERSTNER WAVES
+// Features: Realistic wave simulation, toon shading, boat with wind-blown flag,
+//           Enscape volumetric clouds, improved underwater with Worley noise
+// ============================================================================
+
 #define PI 3.14159265359
 #define DRAG_MULT 0.28
 
@@ -41,23 +47,25 @@ float noise2D(vec2 p) {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Worley noise (a.k.a. cellular noise) for underwater caustics/patterns.
+// Worley (cellular) noise for underwater caustics/patterns.
 // We find the closest and second closest feature points in a 3x3 neighborhood.
 // The difference between those distances gives a nice cellular pattern.
 vec2 worley2D(vec2 p) {
-    vec2 id = floor(p);
-    vec2 fd = fract(p);
+    vec2 id = floor(p); // Integer grid cell 
+    vec2 fd = fract(p); // Position within cell
     
-    float minDist = 1.0;
-    float secondMinDist = 1.0;
+    float minDist = 1.0; // Closest feature point distance 
+    float secondMinDist = 1.0; // Second closest distance 
     
     // Check neighboring cells to find nearest "feature points"
     for(int y = -1; y <= 1; y++) {
         for(int x = -1; x <= 1; x++) {
             vec2 neighbor = vec2(float(x), float(y));
-            // Each cell has one pseudo-random point in it
+            
+            // Random point in this cell
             vec2 point = hash2D(id + neighbor) * vec2(1.0);
             
+            // Distance to feature point
             float dist = length(neighbor + point - fd);
             
             // Track closest and second-closest distances
@@ -70,81 +78,93 @@ vec2 worley2D(vec2 p) {
         }
     }
     
-    return vec2(minDist, secondMinDist);
+    // Return both distances for caustic calculation
+    return vec2(minDist, secondMinDist); 
 }
 
 // ============================================================================
 // GERSTNER WAVE SYSTEM
 // ============================================================================
 
-// Single directional wave: returns (height, derivative along direction).
+// Single directional Gerstner wave calculation
 // We use the derivative to "drag" the sample position and get more choppy,
 // Gerstner-like waves instead of just flat sine waves.
 vec2 wavedx(vec2 position, vec2 direction, float frequency, float timeshift) {
-    float x = dot(direction, position) * frequency + timeshift;
-    float wave = exp(sin(x) - 1.0);
-    float dx = wave * cos(x);
-    return vec2(wave, -dx);
+    float x = dot(direction, position) * frequency + timeshift; // Compute wave phase: direction·position scaled by frequency plus time offset
+    float wave = exp(sin(x) - 1.0); // Exponential sine creates sharp peaks (Gerstner characteristic)
+    float dx = wave * cos(x); // Derivative for horizontal displacement (key Gerstner innovation)
+    return vec2(wave, -dx); // Return both height and horizontal drag
 }
 
 // Sum of many directional waves to build our main ocean displacement.
-// We progressively change frequency, time multiplier and weight to get
-// a fractal-like wave spectrum.
+// We progressively change frequency, time multiplier and weight to get a fractal-like wave spectrum.
+// Accumulate 8 directional waves into complex ocean surface
 float getWaves(vec2 position, int iterations, float time) {
     float wavePhaseShift = length(position) * 0.1;
-    float iter = 0.0;
-    float frequency = 1.0;
-    float timeMultiplier = 2.0;
-    float weight = 1.0;
-    float sumOfValues = 0.0;
-    float sumOfWeights = 0.0;
+    float iter = 0.0; // Iteration counter for directional rotation
+    float frequency = 1.0; // Starting frequency
+    float timeMultiplier = 2.0;  // Time scale 
+    float weight = 1.0; // Wave amplitude weight
+    float sumOfValues = 0.0; // Accumulated wave heights
+    float sumOfWeights = 0.0; // Total weight for normalization
     
+    // Iterate 8 times to build wave complexity
     for(int i = 0; i < iterations; i++) {
-        // Wave direction on a circle
+        // Wave direction rotates in circle: (sin, cos) gives unit vector
         vec2 p = vec2(sin(iter), cos(iter));
+        // Calculate single wave at current position and direction
         vec2 res = wavedx(position, p, frequency, time * timeMultiplier + wavePhaseShift);
         
-        // Move sampling position along derivative to simulate choppy/Gerstner waves
+        // GERSTNER KEY: Horizontal drag moves sample position
+        // This creates choppy peaks instead of smooth sine waves
         position += p * res.y * weight * DRAG_MULT;
         
         sumOfValues += res.x * weight;
         sumOfWeights += weight;
         
         // Decrease weight as we add higher frequency waves
+        // Progressive parameter changes for fractal-like spectrum
         weight = mix(weight, 0.0, 0.2);
         frequency *= 1.18;
         timeMultiplier *= 1.07;
-        iter += 1232.399963; // Just a big random phase offset
+        iter += 1232.399963; // Large phase offset for rotation
     }
     
-    return sumOfValues / sumOfWeights;
+    return sumOfValues / sumOfWeights; // Return normalized sum
 }
 
-// Convert our wave accumulation into a final height value.
+// Convert our wave accumulation into a final height value with LOD optimization
 // The scaling and offset are tuned artistically so the surface looks nice.
 float getWaveHeight(vec2 worldPos, float time) {
     float distFromOrigin = length(worldPos);
     
+    // LOD factor: 1.0 at <15m, smoothly to 0.0 at >50m
     float lodFactor = 1.0 - smoothstep(15.0, 50.0, distFromOrigin);  
     
+    // Get full 8-iteration wave calculation
     float height = getWaves(worldPos, 8, time);
-   
+    
+    // Scale amplitude based on distance: far waves 10% amplitude
     float amplitudeScale = 0.25 * (0.1 + lodFactor * 0.8);  
     height = height * amplitudeScale - 0.15;
     
     return height;
 }
 
-// Approximate normal by sampling nearby heights and taking a cross product.
+
+// Calculate surface normal from height field using finite differences
 // This turns the scalar height field into a geometric surface normal for lighting.
 vec3 calculateWaveNormal(vec2 pos, float time, float epsilon) {
+    // Center height
     float H = getWaves(pos, 12, time);
     vec2 ex = vec2(epsilon, 0);
     
-    vec3 a = vec3(pos.x, H, pos.y);
-    vec3 b = vec3(pos.x - epsilon, getWaves(pos - ex.xy, 12, time), pos.y);
-    vec3 c = vec3(pos.x, getWaves(pos + ex.yx, 12, time), pos.y + epsilon);
+    // Three points on surface for cross product
+    vec3 a = vec3(pos.x, H, pos.y); // Center
+    vec3 b = vec3(pos.x - epsilon, getWaves(pos - ex.xy, 12, time), pos.y); // Left 
+    vec3 c = vec3(pos.x, getWaves(pos + ex.yx, 12, time), pos.y + epsilon); // Forward
     
+    // Cross product of two tangent vectors gives normal
     return normalize(cross(a - b, a - c));
 }
 
@@ -159,26 +179,26 @@ float toonShading(float intensity, int bands) {
     return band * bandSize;
 }
 
-// Toon lighting: diffuse + specular + rim, all quantized to create a stylized look.
+// Apply cel-shaded toon lighting with discrete bands
 vec3 applyToonLighting(vec3 baseColor, vec3 normal, vec3 lightDir, vec3 viewDir) {
-    float NdotL = max(0.0, dot(normal, lightDir));
+    float NdotL = max(0.0, dot(normal, lightDir)); // Lambertian diffuse term
     
-    // Step 1: toon diffuse
-    float toonDiffuse = toonShading(NdotL, 4);
+    // Step 1: toon diffuse: quantize diffuse into 4 discrete bands (toon style)
+    float toonDiffuse = toonShading(NdotL, 4); // Bands: 0, 0.25, 0.5, 0.75, 1.0
     
-    // Step 2: toon specular using Blinn-Phong style half vector
-    vec3 halfVec = normalize(lightDir + viewDir);
-    float specular = pow(max(0.0, dot(normal, halfVec)), 32.0);
-    float toonSpecular = toonShading(specular, 2);
+    // Step 2: toon specular using Blinn-Phong style half vector 
+    vec3 halfVec = normalize(lightDir + viewDir); 
+    float specular = pow(max(0.0, dot(normal, halfVec)), 32.0); // Shininess = 32
+    float toonSpecular = toonShading(specular, 2);  // 2 bands: 0, 0.5, 1.0
     
-    // Step 3: rim light (used as a "toon outline" on the lit side)
-    float rim = 1.0 - max(0.0, dot(normal, viewDir));
-    rim = pow(rim, 3.0);
-    rim = step(0.65, rim);
+    // Step 3: rim lighting for toon outline effect
+    float rim = 1.0 - max(0.0, dot(normal, viewDir)); // Fresnel-like
+    rim = pow(rim, 3.0); // Sharpen falloff 
+    rim = step(0.65, rim); // Binary threshold 
     
     // Combine into a final toon-lit color
-    vec3 ambient = baseColor * 0.4;
-    vec3 diffuse = baseColor * (0.5 + toonDiffuse * 0.35);
+    vec3 ambient = baseColor * 0.4;   // Ambient
+    vec3 diffuse = baseColor * (0.5 + toonDiffuse * 0.35); 
     vec3 spec = vec3(1.0) * toonSpecular * 0.4;
     vec3 rimColor = vec3(0.3, 0.35, 0.4) * rim * 0.15;
     
@@ -189,30 +209,40 @@ vec3 applyToonLighting(vec3 baseColor, vec3 normal, vec3 lightDir, vec3 viewDir)
 // ENHANCED FOAM AND SPRAY
 // ============================================================================
 
+// Foam appears on steep wave peaks where water is most turbulent
 // Foam along sharp crests: we detect steep areas via normal.y (low y = steep).
 // Then we modulate with high-frequency noise so foam breaks up into patches.
 float calculateWaveCrestFoam(vec3 worldPos, vec3 normal, float time) {
-    float steepness = 1.0 - normal.y;
-    steepness = smoothstep(0.15, 0.35, steepness);
+    float steepness = 1.0 - normal.y;  // Steepness detection: when normal.y is low, the surface is steep (vertical)
+    steepness = smoothstep(0.15, 0.35, steepness); // only crests above threshold produce foam
     
+    // Two layers of noise at different scales for organic foam pattern
     float foamNoise1 = noise2D(worldPos.xz * 6.0 + time * vec2(0.3, 0.2));
     float foamNoise2 = noise2D(worldPos.xz * 12.0 - time * vec2(0.2, 0.3));
     
+    // Multiply noises: creates scattered foam patches (not solid)
     float foam = foamNoise1 * foamNoise2;
+    
+    // Threshold: only bright areas of noise become foam
     foam = step(0.45, foam);
     
+    // Threshold: only bright areas of noise become foam
     return foam * steepness;
 }
 
 // "Sea spray" particles: thresholded noise around steep areas,
 // so only the big energetic waves throw spray.
 float calculateSeaSpray(vec3 worldPos, vec3 normal, float time) {
-    float steepness = 1.0 - normal.y;
-    if (steepness < 0.2) return 0.0;
+    float steepness = 1.0 - normal.y; // Steepness check: spray only on steep waves
+    if (steepness < 0.2) return 0.0;  // Early exit for flat areas
     
+    // High-frequency animated noise for spray particles
     float spray = noise2D(worldPos.xz * 8.0 + time * vec2(0.8, 0.6));
+    // Add second layer at different scale and direction
     spray += noise2D(worldPos.xz * 16.0 - time * vec2(0.5, 0.7)) * 0.5;
+    // High threshold: only the brightest noise spots become spray
     spray = step(0.75, spray);
+    // Scale spray by steepness: steeper waves = more spray
     spray *= smoothstep(0.25, 0.4, steepness);
     
     return spray;
@@ -220,8 +250,9 @@ float calculateSeaSpray(vec3 worldPos, vec3 normal, float time) {
 
 // Shoreline foam: we fake waves breaking near the "beach" using depth,
 // some scrolling noise and a sine pattern to make multiple foam lines.
+// Calculate foam intensity based on wave steepness
 float calculateShoreFoam(float depth, float time, vec2 worldPos) {
-    const float foamThreshold = 1.2;
+    const float foamThreshold = 1.2; // Maximum depth for foam effect 
     float foamDiff = saturate(depth / foamThreshold);
     
     // Two layers of noise to keep shore foam irregular
@@ -230,9 +261,12 @@ float calculateShoreFoam(float depth, float time, vec2 worldPos) {
     
     // Animated foam stripes sliding in/out with time
     float foamLines = sin((foamDiff - time * 0.8) * 8.0 * PI);
+    // Convert sine to positive range and fade with depth
     foamLines = saturate(foamLines) * (1.0 - foamDiff);
     
+    // Threshold noise modulated by foam lines
     float foam = step(0.5 - foamLines * 0.3, foamNoise);
+    // Fade out foam as depth increases
     return foam * (1.0 - saturate(depth / foamThreshold));
 }
 
@@ -643,67 +677,74 @@ vec3 getBoatReflectionColor(vec3 worldPos, vec3 boatCenter, vec3 viewDir, vec3 n
 // Main water rendering: raymarch to intersect the heightfield, then shade using
 // toon lighting, Worley caustics, foam, reflections and Fresnel.
 vec3 renderWater(vec3 ro, vec3 rd, vec3 skyColor, vec3 boatCenter, float time) {
+    // Initialize ray marching
     float t = 0.1;
     const int maxSteps = 180;  
-    bool hit = false;
+    bool hit = false; // Surface hit flag
     vec3 hitPos;
     
-    // March along the ray until we cross the wave surface.
+    // Ray march to find water surface
     for (int i = 0; i < maxSteps; i++) {
-        hitPos = ro + rd * t;
-        float waveHeight = getWaveHeight(hitPos.xz, time);
-        float diff = hitPos.y - waveHeight;
+        hitPos = ro + rd * t; // Current position along ray 
         
+        float waveHeight = getWaveHeight(hitPos.xz, time); // Get wave height at this position
+        float diff = hitPos.y - waveHeight; // Distance to surface
+        
+        // Adaptive epsilon: tighter near, looser far
         float adaptiveEpsilon = 0.005 + t * 0.0002; 
         
+        // Check if we hit the surface
         if (abs(diff) < adaptiveEpsilon) {  
             hit = true;
             break;
         }
         
+        // Step size based on distance to surface
         float stepSize = max(0.008, abs(diff) * 0.25); 
         t += stepSize;
        
-        if (t > 120.0) break;  
+        if (t > 120.0) break; // Max distance cutoff 
     }
     
-    // key to solve the horizon issue
+    // If no hit, return background
+    // Also the key to solve the horizon issue
     if (!hit) {
         return skyColor;
     }
     
     float distance = t;
     
+    // Calculate surface normal with distance-adaptive detail
     float normalEps = 0.015 + distance * 0.0001;
     vec3 normal = calculateWaveNormal(hitPos.xz, time, normalEps);
     
     float depth = min(t * 0.2, 8.0);
     
     // ================== STRONGER MICRO PERTURBATION ==================
-    // Here we add a "fake normal map" using multiple layers of Perlin noise.
+    // Add micro-scale surface detail using 3-layer Perlin noise
     // It makes the water surface look more detailed without changing its height.
-    vec2 microUV = hitPos.xz * 8.0 + iTime * 0.6;   // higher freq, faster move
+    vec2 microUV = hitPos.xz * 8.0 + iTime * 0.6;   // // Base frequency 8.0, animated
 
-    float n1 = noise2D(microUV);
-    float n2 = noise2D(microUV * 2.7 + 13.1);
-    float n3 = noise2D(microUV * 5.1 - 7.3);
+    // Three octaves of noise at different frequencies
+    float n1 = noise2D(microUV);   // Base layer
+    float n2 = noise2D(microUV * 2.7 + 13.1); // Mid detail  
+    float n3 = noise2D(microUV * 5.1 - 7.3); // Fine detail 
 
-    // Combine noises for richer pattern in [-1,1]
-    vec2 m = vec2(n1, n2) * 2.0 - 1.0;
-    m += (n3 * 2.0 - 1.0) * 0.5;     // extra detail
+    // Combine noise layers: primary + secondary + tertiary
+    vec2 m = vec2(n1, n2) * 2.0 - 1.0; // Remap to [-1, 1] 
+    m += (n3 * 2.0 - 1.0) * 0.5; // Add fine detail at half strength
 
-    // How strong the micro bumps are
-    float microStrength = 0.1;      // 0.2 = subtle, 0.5 = very wobbly
+    // Perturbation strength: how much normals are affected
+    float microStrength = 0.1; // Eg: 0.2 = subtle, 0.5 = very wobbly
 
     vec3 microNormal = normalize(vec3(
-        m.x * microStrength,
-        1.0,
-        m.y * microStrength
+        m.x * microStrength,  // X tilt 
+        1.0,                  // Y stays vertical
+        m.y * microStrength   // Z tilt 
     ));
 
     // Blend more towards microNormal for stronger perturbation.
-    // This basically "tilts" the normal by small noisy amounts.
-    float blend = 0.15;               // 0.3 subtle, 0.8 crazy
+    float blend = 0.15; // Eg: 0.3 subtle, 0.8 crazy
     normal = normalize(mix(normal, microNormal, blend));
     // =====================================================
     
@@ -713,24 +754,31 @@ vec3 renderWater(vec3 ro, vec3 rd, vec3 skyColor, vec3 boatCenter, float time) {
     vec3 deepColor = vec3(0.15, 0.45, 0.7);         
     vec3 veryDeepColor = vec3(0.08, 0.25, 0.5);     
 
-    // Worley caustics 
-    vec2 worley = worley2D(hitPos.xz * 2.0 + time * 0.15);  
-    float caustics = worley.y - worley.x;
-    caustics = smoothstep(0.1, 0.4, caustics) * 0.6;  
+    // Worley Caustics (Underwater Light Patterns)   
+    vec2 worley = worley2D(hitPos.xz * 2.0 + time * 0.15); // Small-scale caustics for surface detail  
+    float caustics = worley.y - worley.x; // Caustic intensity from distance difference (creates cellular pattern)
+    caustics = smoothstep(0.1, 0.4, caustics) * 0.6; // Remap caustics to visible range and reduce intensity
 
+    // Large-scale pattern for deep water variation
     vec2 worleyLarge = worley2D(hitPos.xz * 0.2 + time * 0.03);
     float deepPattern = smoothstep(0.3, 0.7, worleyLarge.x);
 
+    // Depth-Based Color Gradient 
     vec3 baseColor;
-    float depthT = smoothstep(0.0, 6.0, depth); 
+    float depthT = smoothstep(0.0, 6.0, depth); // Depth factor: 0 at surface, 1 at 6 meters deep
 
-    baseColor = mix(shallowColor, midColor, smoothstep(0.0, 0.3, depthT));
-    baseColor = mix(baseColor, deepColor, smoothstep(0.3, 0.7, depthT));
-    baseColor = mix(baseColor, veryDeepColor, smoothstep(0.7, 1.0, depthT));
+    // Three-tier color transition based on depth
+    baseColor = mix(shallowColor, midColor, smoothstep(0.0, 0.3, depthT)); // Shallow (0-30% depth): shallowColor -> midColor
+    baseColor = mix(baseColor, deepColor, smoothstep(0.3, 0.7, depthT)); // Mid-depth (30-70% depth): midColor -> deepColor
+    baseColor = mix(baseColor, veryDeepColor, smoothstep(0.7, 1.0, depthT)); // Deep water (70-100% depth): deepColor -> veryDeepColor
 
+    // Caustics fade out with depth (strongest at surface)
     float causticsStrength = 1.0 - smoothstep(0.0, 1.5, depth);
 
-    caustics = pow(caustics, 0.8);  
+    // Adjust caustics contrast
+    caustics = pow(caustics, 0.8);
+    // Color (0.25, 0.3, 0.35) gives underwater light feel
+    // Add caustics as bright blue-cyan additive light
     baseColor += vec3(0.25, 0.3, 0.35) * caustics * causticsStrength;  
 
     
@@ -759,13 +807,14 @@ vec3 renderWater(vec3 ro, vec3 rd, vec3 skyColor, vec3 boatCenter, float time) {
         shadedColor += reflectionColor * ripple * 0.2;
     }
     
-    // Fresnel factor: view-angle dependent highlight.
-// We quantize it with toonShading so the reflection rim also feels stylized.
+    // Fresnel: view-angle dependent reflectivity
+    // We use Fresnel effect to control water reflectivity based on view angle. The formula is one minus dot product of normal and view direction, raised to power three. At grazing angles - looking across the water - Fresnel approaches one, giving strong reflections. Looking straight down, Fresnel approaches zero, showing more of the underwater color. 
+    // This creates realistic water appearance where you see more reflections at the horizon and more transparency when looking down.
     float fresnel = pow(1.0 - max(0.0, dot(normal, viewDir)), 3.0);
     fresnel = toonShading(fresnel, 2);
     shadedColor = mix(shadedColor, skyColor * 0.8, fresnel * 0.15);
     
-    // Foam system: combine shoreline, crest foam, and spray to get final foam mask.
+    // Foam system: combine shoreline, crest foam, and spray to get final foam mask. 
     float shoreFoam = calculateShoreFoam(depth, time, hitPos.xz);
     float crestFoam = calculateWaveCrestFoam(hitPos, normal, time);
     float spray = calculateSeaSpray(hitPos, normal, time);
@@ -776,7 +825,7 @@ vec3 renderWater(vec3 ro, vec3 rd, vec3 skyColor, vec3 boatCenter, float time) {
     shadedColor = mix(shadedColor, foamColor, totalFoam * 0.85);
     shadedColor += vec3(1.0) * spray * 0.3;
     
-    // anti-aliasing
+    // Distance-based fade to horizon
     float distanceFade = smoothstep(70.0, 115.0, distance); 
     shadedColor = mix(shadedColor, skyColor, distanceFade * 0.5);
     
