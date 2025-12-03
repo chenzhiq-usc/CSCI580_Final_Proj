@@ -818,17 +818,21 @@ float getBoatShadow(const vec3 &worldPos, const vec3 &boatCenter, const vec3 &li
 
 vec3 getBoatReflectionColor(const vec3 &worldPos, const vec3 &boatCenter, const vec3 &viewDir, const vec3 &normal, float time)
 {
+    // Compute reflection direction off the water surface
     vec3 reflectDir = reflect(viewDir, normal);
 
+    // Mirror the boat below the water plane to simulate reflection
     vec3 mirroredBoatCenter = boatCenter;
     mirroredBoatCenter.y = -mirroredBoatCenter.y;
 
+    // Raymarch along the reflection ray toward the mirrored boat
     float t = 0.0f;
     const int steps = 35;
     for (int i = 0; i < steps; i++)
     {
         vec3 p = worldPos + reflectDir * t;
 
+        // If hit detected, compute reflected shading
         float d = sdBoat(p - mirroredBoatCenter, time);
         if (d < 0.08f)
         {
@@ -838,6 +842,7 @@ vec3 getBoatReflectionColor(const vec3 &worldPos, const vec3 &boatCenter, const 
             vec3 lightDir = normalize(vec3(0.7f, 0.6f, -0.3f));
             float refLight = std::max(0.3f, dot(refNormal, lightDir));
 
+             // Return color based on material ID
             if (matID == 0)
                 return vec3(0.75f, 0.22f, 0.16f) * refLight;
             if (matID == 1)
@@ -846,7 +851,10 @@ vec3 getBoatReflectionColor(const vec3 &worldPos, const vec3 &boatCenter, const 
                 return vec3(0.4f, 0.28f, 0.2f) * refLight;
             return vec3(0.92f, 0.15f, 0.12f) * refLight;
         }
+
+        // March forward using SDF distance (with minimum step)
         t += std::max(0.04f, d);
+        // Terminate if too far from scene
         if (t > 8.0f)
             break;
     }
@@ -941,21 +949,28 @@ vec3 renderWater(const vec3 &ro, const vec3 &rd, const vec3 &skyColor, const vec
     vec3 viewDir = rd * -1.0f;
     vec3 shadedColor = applyToonLighting(baseColor, normal, lightDir, viewDir);
 
+    // Render Boat Shadow
     float shadow = getBoatShadow(hitPos, boatCenter, lightDir, time);
+
+    // If shadowed, darken the water (soft shadow blend)
     if (shadow < 1.0f)
     {
         shadedColor = shadedColor * (0.6f + shadow * 0.4f);
     }
 
+    // Render Boat Reflection
     vec3 reflectionColor = getBoatReflectionColor(hitPos, boatCenter, rd, normal, time);
     if (length(reflectionColor) > 0.0f)
     {
         float reflectionStrength = 0.65f;
+        // Distort reflection using Perlin noise to simulate water surface wobble
         float distortion = noise2D(vec2(hitPos.x, hitPos.z) * 3.0f + vec2(time, time) * 0.5f) * 0.1f;
+        // Reduce reflection intensity based on distortion amount
         reflectionStrength *= (1.0f - distortion);
 
         shadedColor = mix(shadedColor, reflectionColor, reflectionStrength);
 
+        // Add bright ripple highlights using higher-frequency noise
         float ripple = smoothstep(0.5f, 0.7f, noise2D(vec2(hitPos.x, hitPos.z) * 8.0f + time));
         shadedColor += reflectionColor * ripple * 0.2f;
     }
